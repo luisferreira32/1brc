@@ -16,6 +16,7 @@ import (
 
 const (
 	readBufferSize = 1_048_576
+	educatedJump   = 4 // {city-name; 2:+};[-]{0-9},{0-99}
 )
 
 func panicHandler() {
@@ -91,14 +92,24 @@ func solveLine(line string, solution map[string]*solutionItem) error {
 }
 
 func parseReadBuffer(b []byte, solution map[string]*solutionItem) (int, error) {
-	lines := strings.Split(string(b), "\n")
-	for _, line := range lines[:len(lines)-1] {
-		err := solveLine(line, solution)
-		if err != nil {
-			return 0, err
+	i := 0
+	p := 0
+	for {
+		if i >= len(b) {
+			break
 		}
+		if b[i] == '\n' {
+			err := solveLine(string(b[p:i]), solution)
+			if err != nil {
+				return 0, err
+			}
+			p = i + 1 // skip \n
+			i += educatedJump
+		}
+		i++
 	}
-	return len(lines[len(lines)-1]), nil
+
+	return len(b) - p, nil
 }
 
 // Emit to stdout sorted alphabetically by station name, and the result values
@@ -129,14 +140,8 @@ func solve1brc(filename string) error {
 			return err
 		}
 
-		if p > 0 { // carry over last line
+		if p > 0 { // carry over last partial line
 			copy(b[:p], []byte(b[pn-p:pn]))
-		}
-	}
-	if p != 0 { // edge case: we actually had a full line in the buffer that we just carried over
-		err = solveLine(string(b[:p]), solution)
-		if err != nil {
-			return err
 		}
 	}
 
