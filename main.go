@@ -12,13 +12,18 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 const (
 	readBufferSize = 1_048_576
-	educatedJump   = 4 // {city-name; 2:+};[-]{0-9},{0-99}
-	maxStations    = 10_000
 	workerNum      = 16
+
+	educatedJump   = 4 // {city-name; 1:100};[-]{0-99},{0-9}
+	maxStations    = 10_000
+	maxCityName    = 100
+	lineBufferSize = maxCityName + 8 // {city-name; 1:100};[-]{0-99},{0-9}
 )
 
 func panicHandler() {
@@ -113,10 +118,14 @@ func solveLine(line []byte) error {
 	}
 
 	name := string(line[:i])
+	solutionLock.RLock()
 	s, ok := solution[name]
+	solutionLock.RUnlock()
 	if !ok {
 		s = &solutionItem{}
+		solutionLock.Lock()
 		solution[name] = s
+		solutionLock.Unlock()
 	}
 
 	i++ // skip the ;
@@ -132,6 +141,21 @@ func solveLine(line []byte) error {
 	return nil
 }
 
+func prepareWorkers() ([][]byte, []chan struct{}) {
+	b := make([][]byte, workerNum)
+	triggers := make([]chan struct{}, workerNum)
+	for i := 0; i < workerNum; i++ {
+		b[i] = make([]byte, lineBufferSize)
+		triggers[i] = make(chan struct{}, 10)
+	}
+	return b, triggers
+}
+
+var (
+	workerIndex                = make(chan int, workerNum+1)
+	lineBuffers, workerTrigger = prepareWorkers()
+)
+
 func parseReadBuffer(b []byte) (int, error) {
 	i := 0
 	p := 0
@@ -140,11 +164,10 @@ func parseReadBuffer(b []byte) (int, error) {
 			break
 		}
 		if b[i] == '\n' {
-			err := solveLine(b[p:i])
-			if err != nil {
-				return 0, err
-			}
-			p = i + 1 // skip \n
+			availableWorker := <-workerIndex
+			copy(lineBuffers[availableWorker], b[p:i])   // copy memory
+			workerTrigger[availableWorker] <- struct{}{} // cede it to worker to start solving line
+			p = i + 1                                    // skip \n
 			i += educatedJump
 		}
 		i++
@@ -159,6 +182,25 @@ func solve1brc(filename string) error {
 	f, err := os.Open(filename)
 	if err != nil {
 		return err
+	}
+
+	// start workerNum of workers, they queue their index when available, and expect to own the buffer while working
+	g := errgroup.Group{}
+	for i := 0; i < workerNum; i++ {
+		workerIndex <- i
+		g.Go(func() error {
+			for {
+				_, ok := <-workerTrigger[i]
+				if !ok {
+					return nil
+				}
+				err := solveLine(lineBuffers[i])
+				if err != nil {
+					return err
+				}
+				workerIndex <- i
+			}
+		})
 	}
 
 	b := make([]byte, readBufferSize)
@@ -183,6 +225,15 @@ func solve1brc(filename string) error {
 		if p > 0 { // carry over last partial line
 			copy(b[:p], []byte(b[pn-p:pn]))
 		}
+	}
+
+	for i := 0; i < workerNum; i++ {
+		close(workerTrigger[i])
+	}
+
+	err = g.Wait()
+	if err != nil {
+		return err
 	}
 
 	keys := make([]string, 0, len(solution))
