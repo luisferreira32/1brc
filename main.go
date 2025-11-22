@@ -60,6 +60,35 @@ You can also enable profiling with
 	return a, nil
 }
 
+// From the rules:
+// > Temperature value: non null double between -99.9 (inclusive) and 99.9 (inclusive), always with one fractional digit
+func fastParseFloat64(b []byte) float64 {
+	num := 0
+	i := 0
+	neg := false
+	if b[i] == '-' {
+		neg = true
+		i++ // skip '-'
+	}
+	for {
+		if b[i] == '.' {
+			break
+		}
+		num *= 10
+		num += int(b[i]) - 48
+
+		i++
+	}
+	i++ // skip '.'
+	dec := .1 * float64(int(b[i])-48)
+
+	if neg {
+		return -(float64(num) + dec)
+	}
+
+	return float64(num) + dec
+}
+
 type solutionItem struct {
 	min   float64
 	max   float64
@@ -68,33 +97,32 @@ type solutionItem struct {
 }
 
 func solveLine(line []byte, solution map[string]*solutionItem) error {
-	for i := 2; i < len(line); i++ {
+	i := 0
+	for {
 		if line[i] == ';' {
-			name := string(line[:i])
-
-			s, ok := solution[name]
-			if !ok {
-				s = &solutionItem{}
-				solution[name] = s
-			}
-
-			temp, err := strconv.ParseFloat(string(line[i+1:]), 32)
-			if err != nil {
-				return fmt.Errorf("on line: %s, got err: %w", line, err)
-			}
-
-			s.acc += temp
-			s.count += 1
-			if s.max < temp {
-				s.max = temp
-			}
-			if s.min > temp {
-				s.min = temp
-			}
-			return nil
+			break
 		}
+		i++
 	}
-	return fmt.Errorf("unexpected line with a ; break: %s", line)
+
+	name := string(line[:i])
+	s, ok := solution[name]
+	if !ok {
+		s = &solutionItem{}
+		solution[name] = s
+	}
+
+	i++ // skip the ;
+	num := fastParseFloat64(line[i:])
+	s.acc += num
+	s.count += 1
+	if s.max < num {
+		s.max = num
+	}
+	if s.min > num {
+		s.min = num
+	}
+	return nil
 }
 
 func parseReadBuffer(b []byte, solution map[string]*solutionItem) (int, error) {
