@@ -42,3 +42,5 @@ go tool pprof -http :8080 cpu.prof
 # Worklog
 
 **\#0**: The main objective would be to do a naive single threaded approach, already with some opinionated ways of coding, such that I could get pprof running on it and start some real optimizations.
+
+**\#1**: Looking at the initial profile there is an initial surprise: we don't actually waste that much time reading the file, and have ~80% of the processing spent on string manipulation and accessing the solution map. There is a need for a new data structure and a new parsing. Since ~39% of the time was done in the `strings.Split` function, let's optimize that.

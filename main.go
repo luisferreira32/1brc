@@ -14,6 +14,10 @@ import (
 	"strings"
 )
 
+const (
+	readBufferSize = 1_048_576
+)
+
 func panicHandler() {
 	r := recover()
 	if r != nil {
@@ -86,9 +90,16 @@ func solveLine(line string, solution map[string]*solutionItem) error {
 	return nil
 }
 
-const (
-	bufferSize = 1_048_576
-)
+func parseReadBuffer(b []byte, solution map[string]*solutionItem) (int, error) {
+	lines := strings.Split(string(b), "\n")
+	for _, line := range lines[:len(lines)-1] {
+		err := solveLine(line, solution)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return len(lines[len(lines)-1]), nil
+}
 
 // Emit to stdout sorted alphabetically by station name, and the result values
 // per station in the format <min>/<mean>/<max>, rounded to one fractional digit.
@@ -99,10 +110,10 @@ func solve1brc(filename string) error {
 	}
 
 	solution := make(map[string]*solutionItem)
-	b := make([]byte, bufferSize)
+	b := make([]byte, readBufferSize)
 	p := 0
 
-	log.Printf("starting to read file %s by chunks of %v bytes\n", filename, bufferSize)
+	log.Printf("starting to read file %s by chunks of %v bytes\n", filename, readBufferSize)
 	for {
 		n, err := f.Read(b[p:])
 		if err != nil {
@@ -112,22 +123,21 @@ func solve1brc(filename string) error {
 			return err
 		}
 
-		lines := strings.Split(string(b[:p+n]), "\n")
-		for _, line := range lines[:len(lines)-1] { // skip last, most likely incomplete line
-			err := solveLine(line, solution)
-			if err != nil {
-				return err
-			}
+		pn := p + n
+		p, err = parseReadBuffer(b[:pn], solution)
+		if err != nil {
+			return err
 		}
 
-		lastLine := lines[len(lines)-1]
-		p = len(lastLine)
-		if p > 0 {
-			copy(b[:len(lastLine)], []byte(lastLine))
+		if p > 0 { // carry over last line
+			copy(b[:p], []byte(b[pn-p:pn]))
 		}
 	}
 	if p != 0 { // edge case: we actually had a full line in the buffer that we just carried over
-		solveLine(string(b[:p]), solution)
+		err = solveLine(string(b[:p]), solution)
+		if err != nil {
+			return err
+		}
 	}
 
 	keys := make([]string, 0, len(solution))
