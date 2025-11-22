@@ -1,0 +1,44 @@
+# The One Billion Row Challenge
+
+This is a Go implementation to solve "The One Billion Row Challenge".
+
+DISCLAIMER: Not an official run. Not in an official machine. Not with the official language. Definitely late. However, it seemed like a fun optimization challenge when I stumbled uppon it.
+
+---
+
+Credits to the challenge creator and all contributors can be found in: https://github.com/gunnarmorling/1brc
+
+# Progress 📈
+
+| Iteration | User Time | Notes                    |
+| --------- | --------- | ------------------------ |
+| #0        | 1m53s     | Naive setup for baseline |
+
+# The process
+
+Being completely unofficial one has to have a baseline, so a (possibly) correct solution was first obtained with iteration **\#0**. Then the process is as follows:
+
+1. Run
+
+```
+time go run . ./data/measurements.txt | ./out/run_X.txt
+```
+
+2. Validate
+
+```
+diff ./out/run_X.txt ./out/run_0.txt
+```
+
+3. Profile
+
+```
+go run . -p ./data/measurements.txt
+go tool pprof -http :8080 cpu.prof
+```
+
+4. Optimize!
+
+# Worklog
+
+**\#0**: The main objective would be to do a naive single threaded approach, already with some opinionated ways of coding, such that I could get pprof running on it and start some real optimizations.
