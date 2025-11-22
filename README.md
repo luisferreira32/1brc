@@ -56,3 +56,5 @@ The optimization process here was simple: we have some strict constraints on the
 - Parsing the float numbers (~13%)
 
 Let's pick the low hanging fruit: avoid unnecessary cast to string and a proper speed up of the float64 parsing.
+
+**\#3**: Other 20 seconds shaved off in the implementation! Now the profiling still points to the same initial issue: most of the time is spent accessing the data structure. In a first approach, both slices and tries do not offer "out-of-the-box" improvements, but they can be the way forwards as accessing data within those structures is less opaque in implementation to the user. However, since we can see the map access is bottlenecked by compute power, it is an easy step to split this into worker routines to fully utilize the CPU cores.

@@ -10,13 +10,15 @@ import (
 	"os"
 	"runtime/pprof"
 	"slices"
-	"strconv"
+	"sync"
 	"time"
 )
 
 const (
 	readBufferSize = 1_048_576
 	educatedJump   = 4 // {city-name; 2:+};[-]{0-9},{0-99}
+	maxStations    = 10_000
+	workerNum      = 16
 )
 
 func panicHandler() {
@@ -96,7 +98,12 @@ type solutionItem struct {
 	acc   float64
 }
 
-func solveLine(line []byte, solution map[string]*solutionItem) error {
+var (
+	solution     = make(map[string]*solutionItem, maxStations)
+	solutionLock = sync.RWMutex{}
+)
+
+func solveLine(line []byte) error {
 	i := 0
 	for {
 		if line[i] == ';' {
@@ -125,7 +132,7 @@ func solveLine(line []byte, solution map[string]*solutionItem) error {
 	return nil
 }
 
-func parseReadBuffer(b []byte, solution map[string]*solutionItem) (int, error) {
+func parseReadBuffer(b []byte) (int, error) {
 	i := 0
 	p := 0
 	for {
@@ -133,7 +140,7 @@ func parseReadBuffer(b []byte, solution map[string]*solutionItem) (int, error) {
 			break
 		}
 		if b[i] == '\n' {
-			err := solveLine(b[p:i], solution)
+			err := solveLine(b[p:i])
 			if err != nil {
 				return 0, err
 			}
@@ -154,7 +161,6 @@ func solve1brc(filename string) error {
 		return err
 	}
 
-	solution := make(map[string]*solutionItem)
 	b := make([]byte, readBufferSize)
 	p := 0
 
@@ -169,7 +175,7 @@ func solve1brc(filename string) error {
 		}
 
 		pn := p + n
-		p, err = parseReadBuffer(b[:pn], solution)
+		p, err = parseReadBuffer(b[:pn])
 		if err != nil {
 			return err
 		}
@@ -199,7 +205,7 @@ func main() {
 	gracefullyHanldeErrors(err)
 
 	if a.profile {
-		f, err := os.Create("cpu" + strconv.FormatInt(time.Now().Unix(), 10) + ".prof")
+		f, err := os.Create("cpu-" + time.Now().Format(time.RFC3339) + ".prof")
 		if err != nil {
 			gracefullyHanldeErrors(err)
 		}
