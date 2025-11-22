@@ -10,11 +10,12 @@ Credits to the challenge creator and all contributors can be found in: https://g
 
 # Progress 📈
 
-| Iteration | User Time | Notes                                                                                          |
+| Iteration | Real Time | Notes                                                                                          |
 | --------- | --------- | ---------------------------------------------------------------------------------------------- |
 | #0        | 1m53s     | Naive setup for baseline                                                                       |
 | #1        | 1m24s     | Optimize the initial string parsing given the challenge constraints                            |
 | #2        | 1m5s      | Remove cast to string to do a converstion to float64 and just optimize that within constraints |
+| #3        | 7.6s      | Do concurrency...                                                                              |
 
 # The process
 
@@ -56,3 +57,5 @@ The optimization process here was simple: we have some strict constraints on the
 - Parsing the float numbers (~13%)
 
 Let's pick the low hanging fruit: avoid unnecessary cast to string and a proper speed up of the float64 parsing.
+
+**\#3**: We still pass a lot of time calculating hashes, but we know the CPU cores are very under utilized, so let's add concurrency matching the machine cores and see how much we get out of this.

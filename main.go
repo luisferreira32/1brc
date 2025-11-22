@@ -8,21 +8,25 @@ import (
 	"log"
 	"math"
 	"os"
+	"runtime/debug"
 	"runtime/pprof"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 )
 
 const (
-	readBufferSize = 1_048_576
-	educatedJump   = 4 // {city-name; 2:+};[-]{0-9},{0-99}
+	readBufferSize = 4 * 1024 * 1024 // 4 MiB pages
+	educatedJump   = 3               // {city-name; 2:+};[-]{0-9},{0-99}
+
+	workerNum = 16
 )
 
 func panicHandler() {
 	r := recover()
 	if r != nil {
-		log.Printf("Something went wrong...\n%v\n", r)
+		log.Printf("Something went wrong...\n%v\n%s\n", r, debug.Stack())
 	}
 }
 
@@ -125,57 +129,47 @@ func solveLine(line []byte, solution map[string]*solutionItem) error {
 	return nil
 }
 
-func parseReadBuffer(b []byte, solution map[string]*solutionItem) (int, error) {
-	i := 0
-	p := 0
+func processBuffer(b []byte, solution map[string]*solutionItem) {
+	fi := 0 // line front-index
+	ri := 0 // line rear-index
 	for {
-		if i >= len(b) {
+		if fi >= len(b) {
 			break
 		}
-		if b[i] == '\n' {
-			err := solveLine(b[p:i], solution)
+		if b[fi] == '\n' {
+			err := solveLine(b[ri:fi], solution)
 			if err != nil {
-				return 0, err
+				log.Printf("[ERROR] %v", err)
+				return
 			}
-			p = i + 1 // skip \n
-			i += educatedJump
+			ri = fi + 1 // skip \n
+			fi += educatedJump
 		}
-		i++
+		fi++
 	}
-
-	return len(b) - p, nil
 }
 
 // Emit to stdout sorted alphabetically by station name, and the result values
 // per station in the format <min>/<mean>/<max>, rounded to one fractional digit.
-func solve1brc(filename string) error {
-	f, err := os.Open(filename)
-	if err != nil {
-		return err
-	}
-
-	solution := make(map[string]*solutionItem)
-	b := make([]byte, readBufferSize)
-	p := 0
-
-	log.Printf("starting to read file %s by chunks of %v bytes\n", filename, readBufferSize)
-	for {
-		n, err := f.Read(b[p:])
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
+func printSolutions(solutions []map[string]*solutionItem) {
+	solution := make(map[string]*solutionItem, workerNum)
+	for _, s := range solutions {
+		for k, v := range s {
+			item, ok := solution[k]
+			if !ok {
+				item = v
+				solution[k] = item
 			}
-			return err
-		}
 
-		pn := p + n
-		p, err = parseReadBuffer(b[:pn], solution)
-		if err != nil {
-			return err
-		}
-
-		if p > 0 { // carry over last partial line
-			copy(b[:p], []byte(b[pn-p:pn]))
+			// merge the maps
+			item.acc += v.acc
+			item.count += v.count
+			if item.max < v.max {
+				item.max = v.max
+			}
+			if item.min > v.min {
+				item.min = v.min
+			}
 		}
 	}
 
@@ -189,6 +183,82 @@ func solve1brc(filename string) error {
 		mean := math.Round(10*item.acc/float64(item.count)) / 10 // rounded to 1 decimal point
 		fmt.Printf("%s=%.1f/%.1f/%.1f\n", k, item.min, mean, item.max)
 	}
+}
+
+type workItem struct {
+	bufferIndex int
+	bufferLen   int
+}
+
+func solve1brc(filename string) error {
+	f, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+
+	var (
+		readBuffer    = make([]byte, readBufferSize)
+		wg            = sync.WaitGroup{}
+		solutions     = make([]map[string]*solutionItem, workerNum)
+		workerBuffers = make([][]byte, workerNum)
+		toProcess     = make(chan *workItem, workerNum+1)
+		doneProcess   = make(chan int, workerNum+1)
+	)
+
+	for n := range workerNum {
+		solutions[n] = make(map[string]*solutionItem)
+		workerBuffers[n] = make([]byte, readBufferSize)
+		doneProcess <- n // signal ready
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				item, ok := <-toProcess
+				if !ok {
+					return
+				}
+				b := workerBuffers[item.bufferIndex][:item.bufferLen]
+				processBuffer(b, solutions[item.bufferIndex])
+				doneProcess <- item.bufferIndex
+			}
+
+		}()
+	}
+	remain := 0
+
+	log.Printf("starting to read file %s by chunks of %v bytes\n", filename, readBufferSize)
+	for {
+		n, err := f.Read(readBuffer[remain:])
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return err
+		}
+
+		blen := remain + n // buffer len after read
+		li := blen - 1     // last line break index
+		for {
+			if readBuffer[li] == '\n' {
+				break
+			}
+			li--
+		}
+
+		i := <-doneProcess
+		copy(workerBuffers[i][:li], readBuffer[:li])          // copy data
+		toProcess <- &workItem{bufferIndex: i, bufferLen: li} // signal worker
+		remain = blen - li - 1                                // carry over last partial line and continue reading
+		if remain > 0 {
+			copy(readBuffer[:remain], []byte(readBuffer[li+1:blen]))
+		}
+	}
+
+	close(toProcess)
+	wg.Wait()
+
+	printSolutions(solutions)
 	return nil
 }
 
