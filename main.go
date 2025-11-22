@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"runtime/debug"
 	"runtime/pprof"
 	"slices"
 	"strconv"
@@ -15,14 +16,14 @@ import (
 )
 
 const (
-	readBufferSize = 1_048_576
-	educatedJump   = 4 // {city-name; 2:+};[-]{0-9},{0-99}
+	readBufferSize = 4 * 1024 * 1024 // 4 MiB pages
+	educatedJump   = 3               // {city-name; 2:+};[-]{0-9},{0-99}
 )
 
 func panicHandler() {
 	r := recover()
 	if r != nil {
-		log.Printf("Something went wrong...\n%v\n", r)
+		log.Printf("Something went wrong...\n%v\n%s\n", r, debug.Stack())
 	}
 }
 
@@ -135,11 +136,11 @@ func solve1brc(filename string) error {
 
 	solution := make(map[string]*solutionItem)
 	b := make([]byte, readBufferSize)
-	p := 0
+	remain := 0
 
 	log.Printf("starting to read file %s by chunks of %v bytes\n", filename, readBufferSize)
 	for {
-		n, err := f.Read(b[p:])
+		n, err := f.Read(b[remain:])
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
@@ -147,28 +148,36 @@ func solve1brc(filename string) error {
 			return err
 		}
 
-		pn := p + n
-		i := 0
-		rp := 0
+		blen := remain + n // buffer len after read
+		li := blen - 1     // last line break index
 		for {
-			if i >= pn {
+			if b[li] == '\n' {
 				break
 			}
-			if b[i] == '\n' {
-				err := solveLine(b[rp:i], solution)
+			li--
+		}
+
+		fi := 0 // line front-index
+		ri := 0 // line rear-index
+		for {
+			if fi > li {
+				break
+			}
+			if b[fi] == '\n' {
+				err := solveLine(b[ri:fi], solution)
 				if err != nil {
 					return err
 				}
-				rp = i + 1 // skip \n
-				i += educatedJump
+				ri = fi + 1 // skip \n
+				fi += educatedJump
 			}
-			i++
+			fi++
 		}
 
-		p = pn - rp
+		remain = blen - li - 1
 
-		if p > 0 { // carry over last partial line
-			copy(b[:p], []byte(b[pn-p:pn]))
+		if remain > 0 { // carry over last partial line
+			copy(b[:remain], []byte(b[blen-remain:blen]))
 		}
 	}
 
