@@ -11,7 +11,6 @@ import (
 	"runtime/pprof"
 	"slices"
 	"strconv"
-	"strings"
 )
 
 const (
@@ -67,28 +66,34 @@ type solutionItem struct {
 	acc   float64
 }
 
-func solveLine(line string, solution map[string]*solutionItem) error {
-	values := strings.Split(line, ";")
-	s, ok := solution[values[0]]
-	if !ok {
-		s = &solutionItem{}
-		solution[values[0]] = s
-	}
+func solveLine(line []byte, solution map[string]*solutionItem) error {
+	for i := 2; i < len(line); i++ {
+		if line[i] == ';' {
+			name := string(line[:i])
 
-	temp, err := strconv.ParseFloat(values[1], 32)
-	if err != nil {
-		return fmt.Errorf("on line: %s, got err: %w", line, err)
-	}
+			s, ok := solution[name]
+			if !ok {
+				s = &solutionItem{}
+				solution[name] = s
+			}
 
-	s.acc += temp
-	s.count += 1
-	if s.max < temp {
-		s.max = temp
+			temp, err := strconv.ParseFloat(string(line[i+1:]), 32)
+			if err != nil {
+				return fmt.Errorf("on line: %s, got err: %w", line, err)
+			}
+
+			s.acc += temp
+			s.count += 1
+			if s.max < temp {
+				s.max = temp
+			}
+			if s.min > temp {
+				s.min = temp
+			}
+			return nil
+		}
 	}
-	if s.min > temp {
-		s.min = temp
-	}
-	return nil
+	return fmt.Errorf("unexpected line with a ; break: %s", line)
 }
 
 func parseReadBuffer(b []byte, solution map[string]*solutionItem) (int, error) {
@@ -99,7 +104,7 @@ func parseReadBuffer(b []byte, solution map[string]*solutionItem) (int, error) {
 			break
 		}
 		if b[i] == '\n' {
-			err := solveLine(string(b[p:i]), solution)
+			err := solveLine(b[p:i], solution)
 			if err != nil {
 				return 0, err
 			}
