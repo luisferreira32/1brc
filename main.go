@@ -11,7 +11,6 @@ import (
 	"runtime/debug"
 	"runtime/pprof"
 	"slices"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -269,7 +268,7 @@ func main() {
 	gracefullyHanldeErrors(err)
 
 	if a.profile {
-		f, err := os.Create("cpu" + strconv.FormatInt(time.Now().Unix(), 10) + ".prof")
+		f, err := os.Create("cpu-" + time.Now().Format(time.RFC3339) + ".prof")
 		if err != nil {
 			gracefullyHanldeErrors(err)
 		}
