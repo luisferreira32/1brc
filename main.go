@@ -125,27 +125,6 @@ func solveLine(line []byte, solution map[string]*solutionItem) error {
 	return nil
 }
 
-func parseReadBuffer(b []byte, solution map[string]*solutionItem) (int, error) {
-	i := 0
-	p := 0
-	for {
-		if i >= len(b) {
-			break
-		}
-		if b[i] == '\n' {
-			err := solveLine(b[p:i], solution)
-			if err != nil {
-				return 0, err
-			}
-			p = i + 1 // skip \n
-			i += educatedJump
-		}
-		i++
-	}
-
-	return len(b) - p, nil
-}
-
 // Emit to stdout sorted alphabetically by station name, and the result values
 // per station in the format <min>/<mean>/<max>, rounded to one fractional digit.
 func solve1brc(filename string) error {
@@ -169,10 +148,24 @@ func solve1brc(filename string) error {
 		}
 
 		pn := p + n
-		p, err = parseReadBuffer(b[:pn], solution)
-		if err != nil {
-			return err
+		i := 0
+		rp := 0
+		for {
+			if i >= pn {
+				break
+			}
+			if b[i] == '\n' {
+				err := solveLine(b[rp:i], solution)
+				if err != nil {
+					return err
+				}
+				rp = i + 1 // skip \n
+				i += educatedJump
+			}
+			i++
 		}
+
+		p = pn - rp
 
 		if p > 0 { // carry over last partial line
 			copy(b[:p], []byte(b[pn-p:pn]))
